@@ -13,7 +13,7 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'puente_sistema.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'puente_server.settings')
 
 def get_websocket_urlpatterns():
     from puente_app.routing import websocket_urlpatterns

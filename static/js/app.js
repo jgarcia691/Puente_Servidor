@@ -4,7 +4,7 @@ let autosRegistrados = new Map();
 // Conectar WebSocket
 function conectarWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/puente/`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/puente_app/`;
     
     socket = new WebSocket(wsUrl);
     
