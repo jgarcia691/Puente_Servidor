@@ -11,7 +11,7 @@ from .models import Auto
 
 def index(request):
     """Vista principal del sistema del puente"""
-    return render(request, 'puente/index.html')
+    return render(request, 'index.html')
 
 @csrf_exempt
 @require_http_methods(["POST"])

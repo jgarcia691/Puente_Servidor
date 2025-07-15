@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class PuenteConfig(AppConfig):
+class PuenteAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'puente'
+    name = 'puente_app'

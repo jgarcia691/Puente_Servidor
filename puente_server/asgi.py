@@ -16,7 +16,7 @@ from django.core.asgi import get_asgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'puente_sistema.settings')
 
 def get_websocket_urlpatterns():
-    from puente.routing import websocket_urlpatterns
+    from puente_app.routing import websocket_urlpatterns
     return websocket_urlpatterns
 
 application = ProtocolTypeRouter({
