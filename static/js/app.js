@@ -3,6 +3,9 @@ let autosRegistrados = new Map();
 let autosCruzando = new Set();
 let autosFinalizados = new Set();
 let timeoutsFinalizar = new Map();
+let autosEsperandoTurno = new Set(); // IDs de autos que ya están esperando su turno
+let timeoutsSimulacion = new Map(); // Para limpiar timeouts al resetear
+let intervalosSimulacion = new Map(); // Para intervalos continuos
 
 // Conectar WebSocket
 function conectarWebSocket() {
@@ -31,7 +34,42 @@ function conectarWebSocket() {
     };
 }
 
-// Manejar mensajes del servidor
+function resetearSistema() {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'resetear_sistema' }));
+    }
+    // Limpia el log y los estados locales inmediatamente
+    limpiarInterfazSistema();
+}
+
+function limpiarInterfazSistema() {
+    // Limpiar logs
+    const logContainer = document.getElementById('logContainer');
+    if (logContainer) logContainer.innerHTML = '';
+    // Limpiar listas
+    actualizarListaAutos('autosEnPuenteList', []);
+    actualizarListaAutos('autosEsperandoList', []);
+    document.getElementById('totalAutos').textContent = '0';
+    document.getElementById('estadoPuente').textContent = 'Libre';
+    const puenteStatus = document.getElementById('puenteStatus');
+    if (puenteStatus) puenteStatus.textContent = 'Puente Libre';
+    
+    // Limpiar estados locales
+    autosRegistrados.clear();
+    autosCruzando.clear();
+    autosFinalizados.clear();
+    autosEsperandoTurno.clear();
+    
+    // Limpiar todos los timeouts e intervalos
+    timeoutsSimulacion.forEach(timeout => clearTimeout(timeout));
+    timeoutsSimulacion.clear();
+    timeoutsFinalizar.forEach(timeout => clearTimeout(timeout));
+    timeoutsFinalizar.clear();
+    intervalosSimulacion.forEach(interval => clearInterval(interval));
+    intervalosSimulacion.clear();
+}
+
+// Escuchar notificación de reseteo desde el backend
 function manejarMensaje(data) {
     switch(data.type) {
         case 'estado_inicial':
@@ -48,6 +86,13 @@ function manejarMensaje(data) {
             break;
         case 'respuesta_cruce':
             manejarRespuestaCruce(data.data);
+            break;
+        case 'reset_sistema':
+            limpiarInterfazSistema();
+            agregarLog('🔄 Sistema reseteado', 'info');
+            break;
+        case 'estado_actualizado':
+            actualizarEstadoInicial(data.estado);
             break;
         case 'error':
             agregarLog(`Error: ${data.message}`, 'error');
@@ -69,7 +114,8 @@ function registrarAuto() {
         nombre: document.getElementById('nombreAuto').value || `Auto_${Math.floor(Math.random() * 9000) + 1000}`,
         velocidad: parseFloat(document.getElementById('velocidadAuto').value),
         tiempo_espera: parseFloat(document.getElementById('tiempoEspera').value),
-        direccion: document.getElementById('direccionAuto').value
+        direccion: document.getElementById('direccionAuto').value,
+        prioridad: parseInt(document.getElementById('prioridadAuto').value) || 3
     };
 
     socket.send(JSON.stringify({
@@ -84,55 +130,114 @@ function registrarAuto() {
 // Auto registrado
 function autoRegistrado(auto) {
     autosRegistrados.set(auto.id, auto);
-    agregarLog(`Auto ${auto.id} registrado (${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'})`, 'info');
+    const prioridadTexto = getPrioridadTexto(auto.prioridad);
+    agregarLog(`Auto #${auto.id} (${auto.nombre}) registrado - Prioridad: ${prioridadTexto} (${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'})`, 'info');
     actualizarEstadisticas();
-    
-    // Iniciar simulación del auto
+    // Iniciar simulación del auto inmediatamente
     iniciarSimulacionAuto(auto);
 }
 
-// Iniciar simulación de auto
+// Función para obtener texto de prioridad
+function getPrioridadTexto(prioridad) {
+    switch(prioridad) {
+        case 1: return 'P1 (Crítica)';
+        case 2: return 'P2 (Alta)';
+        case 3: return 'P3 (Media)';
+        case 4: return 'P4 (Baja)';
+        case 5: return 'P5 (Muy Baja)';
+        default: return `P${prioridad}`;
+    }
+}
+
+// Función para obtener color de prioridad
+function getColorPrioridad(prioridad) {
+    switch(prioridad) {
+        case 1: return '#e74c3c'; // Rojo - Crítica
+        case 2: return '#f39c12'; // Naranja - Alta
+        case 3: return '#f1c40f'; // Amarillo - Media
+        case 4: return '#3498db'; // Azul - Baja
+        case 5: return '#95a5a6'; // Gris - Muy Baja
+        default: return '#34495e'; // Gris oscuro
+    }
+}
+
+// Iniciar simulación de auto - CORREGIDO
 function iniciarSimulacionAuto(auto) {
-    const simularCruce = async () => {
-        // Solicitar permiso para cruzar
-        socket.send(JSON.stringify({
-            type: 'solicitar_cruce',
-            auto_id: auto.id
-        }));
+    // Si ya hay un intervalo para este auto, no lo dupliques
+    if (intervalosSimulacion.has(auto.id)) return;
+    
+    const intentarCruce = () => {
+        // Solo intentar si el auto aún está registrado y no ha terminado
+        if (autosRegistrados.has(auto.id) && !autosFinalizados.has(auto.id)) {
+            socket.send(JSON.stringify({
+                type: 'solicitar_cruce',
+                auto_id: auto.id
+            }));
+        }
     };
-
-    // Simular cruces repetidos
-    const simularCiclo = () => {
-        simularCruce();
-        // Esperar tiempo aleatorio antes del siguiente cruce
-        setTimeout(simularCiclo, (auto.tiempo_espera + Math.random() * 10) * 1000);
-    };
-
-    // Iniciar después de un delay inicial
-    setTimeout(simularCiclo, Math.random() * 5000);
+    
+    // Primer intento inmediato
+    intentarCruce();
+    
+    // Configurar intervalos regulares para reintentos
+    const intervalo = setInterval(() => {
+        if (!autosRegistrados.has(auto.id) || autosFinalizados.has(auto.id)) {
+            clearInterval(intervalo);
+            intervalosSimulacion.delete(auto.id);
+            return;
+        }
+        intentarCruce();
+    }, (auto.tiempo_espera + Math.random() * 5) * 1000);
+    
+    intervalosSimulacion.set(auto.id, intervalo);
 }
 
 // Manejar respuesta de cruce
 function manejarRespuestaCruce(respuesta) {
     if (respuesta.permiso) {
-        // Si el auto ya está cruzando, no mostrar el mensaje de nuevo
-        if (!autosCruzando.has(respuesta.auto.id)) {
-            agregarLog(`✅ ${respuesta.mensaje}`, 'success');
-            autosCruzando.add(respuesta.auto.id);
+        agregarLog(`✅ ${respuesta.mensaje}`, 'success');
+        autosEsperandoTurno.delete(respuesta.auto_id);
+        // Detener la simulación para este auto ya que está cruzando
+        if (intervalosSimulacion.has(respuesta.auto_id)) {
+            clearInterval(intervalosSimulacion.get(respuesta.auto_id));
+            intervalosSimulacion.delete(respuesta.auto_id);
         }
     } else {
-        agregarLog(`⏳ ${respuesta.mensaje}`, 'warning');
+        let nombre = '';
+        let prioridadTexto = '';
+        if (respuesta.auto_id && autosRegistrados.has(respuesta.auto_id)) {
+            const auto = autosRegistrados.get(respuesta.auto_id);
+            nombre = `#${auto.id} (${auto.nombre})`;
+            prioridadTexto = getPrioridadTexto(auto.prioridad);
+        }
+        
+        // Solo mostrar mensaje de espera la primera vez
+        if (respuesta.mensaje === 'No es el turno de este auto para cruzar' && nombre) {
+            if (!autosEsperandoTurno.has(respuesta.auto_id)) {
+                agregarLog(`⏳ ${nombre} - ${prioridadTexto} está esperando su turno`, 'warning');
+                autosEsperandoTurno.add(respuesta.auto_id);
+            }
+        } else if (respuesta.mensaje.includes('Puente ocupado')) {
+            if (!autosEsperandoTurno.has(respuesta.auto_id)) {
+                agregarLog(`⏳ ${nombre} - ${prioridadTexto} esperando - puente ocupado`, 'warning');
+                autosEsperandoTurno.add(respuesta.auto_id);
+            }
+        }
     }
 }
 
 // Auto cruzando
 function autoCruzando(auto) {
-    agregarLog(`🚗 Auto ${auto.id} está cruzando el puente`, 'info');
+    const prioridadTexto = getPrioridadTexto(auto.prioridad);
+    agregarLog(`🚗 Auto #${auto.id} (${auto.nombre}) - ${prioridadTexto} está cruzando el puente`, 'info');
+    autosCruzando.add(auto.id);
     actualizarEstadoPuente();
+    
     // Si ya se finalizó el cruce para este auto, no volver a programar
     if (autosFinalizados.has(auto.id)) return;
     // Si ya hay un timeout programado para este auto, no hacer nada
     if (timeoutsFinalizar.has(auto.id)) return;
+    
     const tiempoCruce = (1000 / auto.velocidad) * 1000;
     const timeoutId = setTimeout(() => {
         if (!autosFinalizados.has(auto.id)) {
@@ -142,43 +247,70 @@ function autoCruzando(auto) {
             }));
             autosFinalizados.add(auto.id);
         }
-        timeoutsFinalizar.delete(auto.id); // Limpiar el timeout al finalizar
+        timeoutsFinalizar.delete(auto.id);
     }, tiempoCruce);
+    
     timeoutsFinalizar.set(auto.id, timeoutId);
 }
 
-// Auto salió del puente
+// Auto salió del puente - CORREGIDO
 function autoSalio(auto) {
-    agregarLog(`✅ Auto ${auto.id} ha salido del puente`, 'success');
+    const prioridadTexto = getPrioridadTexto(auto.prioridad);
+    agregarLog(`✅ Auto #${auto.id} (${auto.nombre}) - ${prioridadTexto} ha salido del puente`, 'success');
+    
+    // Limpiar estados del auto que salió
+    autosRegistrados.delete(auto.id);
     autosCruzando.delete(auto.id);
-    autosFinalizados.delete(auto.id);
-    // Limpiar timeout si existe
+    autosEsperandoTurno.delete(auto.id);
+    
+    // Limpiar intervalos y timeouts
+    if (intervalosSimulacion.has(auto.id)) {
+        clearInterval(intervalosSimulacion.get(auto.id));
+        intervalosSimulacion.delete(auto.id);
+    }
     if (timeoutsFinalizar.has(auto.id)) {
         clearTimeout(timeoutsFinalizar.get(auto.id));
         timeoutsFinalizar.delete(auto.id);
     }
+    
     actualizarEstadoPuente();
+    
+    // Limpiar el set de autos esperando turno para que vuelvan a mostrar mensajes
+    autosEsperandoTurno.clear();
+    
+    // Los autos que siguen en el sistema continuarán intentando
+    // gracias a sus intervalos individuales
 }
 
 // Generar autos aleatorios
 function generarAutosAleatorios() {
-    const cantidad = Math.floor(Math.random() * 5) + 3; // 3-7 autos
+    const cantidad = 5;
     agregarLog(`Generando ${cantidad} autos aleatorios...`, 'info');
     
     for (let i = 0; i < cantidad; i++) {
         setTimeout(() => {
+            // Generar prioridad aleatoria con distribución más realista
+            const prioridadRandom = Math.random();
+            let prioridad;
+            if (prioridadRandom < 0.1) prioridad = 1;      // 10% prioridad crítica
+            else if (prioridadRandom < 0.25) prioridad = 2; // 15% prioridad alta
+            else if (prioridadRandom < 0.60) prioridad = 3; // 35% prioridad media
+            else if (prioridadRandom < 0.85) prioridad = 4; // 25% prioridad baja
+            else prioridad = 5;                             // 15% prioridad muy baja
+
             const autoData = {
                 nombre: `Auto_${Math.floor(Math.random() * 9000) + 1000}`,
                 velocidad: Math.random() * 50 + 30, // 30-80 km/h
-                tiempo_espera: Math.random() * 15 + 5, // 5-20 segundos
-                direccion: Math.random() > 0.5 ? 'N' : 'S'
+                tiempo_espera: Math.random() * 10 + 5, // 5-15 segundos
+                direccion: Math.random() > 0.5 ? 'N' : 'S',
+                prioridad: prioridad
             };
             
             socket.send(JSON.stringify({
                 type: 'registrar_auto',
                 auto: autoData
             }));
-        }, i * 1000); // Espaciar registros por 1 segundo
+        }, i * 500); // Espaciar registros por 0.5 segundos
     }
 }
 
@@ -195,7 +327,9 @@ function actualizarEstadoPuente() {
             const puenteVisual = document.getElementById('puenteVisual');
             
             if (data.autos_en_puente.length > 0) {
-                puenteStatus.textContent = `Puente Ocupado - Auto ${data.autos_en_puente[0].id}`;
+                const auto = data.autos_en_puente[0];
+                const prioridadTexto = getPrioridadTexto(auto.prioridad);
+                puenteStatus.textContent = `Puente Ocupado - Auto #${auto.id} (${auto.nombre}) - ${prioridadTexto}`;
                 puenteVisual.style.background = 'linear-gradient(90deg, #e74c3c 0%, #c0392b 50%, #e74c3c 100%)';
                 document.getElementById('estadoPuente').textContent = 'Ocupado';
             } else {
@@ -203,23 +337,31 @@ function actualizarEstadoPuente() {
                 puenteVisual.style.background = 'linear-gradient(90deg, #27ae60 0%, #2ecc71 50%, #27ae60 100%)';
                 document.getElementById('estadoPuente').textContent = 'Libre';
             }
+        })
+        .catch(error => {
+            console.error('Error al actualizar estado del puente:', error);
         });
 }
 
 // Actualizar lista de autos
 function actualizarListaAutos(elementId, autos) {
     const container = document.getElementById(elementId);
+    if (!container) return;
+    
     if (autos.length === 0) {
         container.innerHTML = '<p>Ningún auto</p>';
         return;
     }
     
-    container.innerHTML = autos.map(auto => 
-        `<div class="auto-item ${auto.en_puente ? 'en-puente' : ''}">
-            <strong>Auto ${auto.id}</strong><br>
-            ${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'} - ${auto.velocidad} km/h
-        </div>`
-    ).join('');
+    container.innerHTML = autos.map(auto => {
+        const prioridadTexto = getPrioridadTexto(auto.prioridad);
+        const colorPrioridad = getColorPrioridad(auto.prioridad);
+        return `<div class="auto-item ${auto.en_puente ? 'en-puente' : ''}">
+            <strong>#${auto.id} - ${auto.nombre}</strong>
+            <span class="prioridad-badge" style="background-color: ${colorPrioridad}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 8px;">${prioridadTexto}</span><br>
+            ${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'} - ${auto.velocidad.toFixed(1)} km/h
+        </div>`;
+    }).join('');
 }
 
 // Actualizar estadísticas
@@ -230,6 +372,8 @@ function actualizarEstadisticas() {
 // Agregar entrada al log
 function agregarLog(mensaje, tipo = 'info') {
     const logContainer = document.getElementById('logContainer');
+    if (!logContainer) return;
+    
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = document.createElement('div');
     logEntry.className = 'log-entry';
@@ -252,4 +396,4 @@ function agregarLog(mensaje, tipo = 'info') {
 document.addEventListener('DOMContentLoaded', function() {
     conectarWebSocket();
     agregarLog('Sistema de control del puente iniciado', 'info');
-}); 
+});
