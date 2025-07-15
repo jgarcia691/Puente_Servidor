@@ -105,7 +105,21 @@ function actualizarEstadoInicial(estado) {
     actualizarListaAutos('autosEnPuenteList', estado.autos_en_puente);
     actualizarListaAutos('autosEsperandoList', estado.autos_esperando);
     document.getElementById('totalAutos').textContent = estado.total_autos;
-    actualizarEstadoPuente();
+
+    const puenteStatus = document.getElementById('puenteStatus');
+    const puenteVisual = document.getElementById('puenteVisual');
+    const estadoPuente = document.getElementById('estadoPuente');
+
+    if (estado.autos_en_puente && estado.autos_en_puente.length > 0) {
+        const auto = estado.autos_en_puente[0];
+        puenteStatus.textContent = `Puente Ocupado por: ${auto.nombre}`;
+        puenteVisual.style.background = 'linear-gradient(90deg, #e74c3c 0%, #c0392b 50%, #e74c3c 100%)';
+        estadoPuente.textContent = `Ocupado por: ${auto.nombre}`;
+    } else {
+        puenteStatus.textContent = 'Puente Libre';
+        puenteVisual.style.background = 'linear-gradient(90deg, #27ae60 0%, #2ecc71 50%, #27ae60 100%)';
+        estadoPuente.textContent = 'Libre';
+    }
 }
 
 // Registrar nuevo auto
@@ -228,29 +242,26 @@ function manejarRespuestaCruce(respuesta) {
 
 // Auto cruzando
 function autoCruzando(auto) {
-    const prioridadTexto = getPrioridadTexto(auto.prioridad);
-    agregarLog(`🚗 Auto #${auto.id} (${auto.nombre}) - ${prioridadTexto} está cruzando el puente`, 'info');
-    autosCruzando.add(auto.id);
-    actualizarEstadoPuente();
-    
-    // Si ya se finalizó el cruce para este auto, no volver a programar
-    if (autosFinalizados.has(auto.id)) return;
-    // Si ya hay un timeout programado para este auto, no hacer nada
-    if (timeoutsFinalizar.has(auto.id)) return;
-    
-    const tiempoCruce = (1000 / auto.velocidad) * 1000;
-    const timeoutId = setTimeout(() => {
-        if (!autosFinalizados.has(auto.id)) {
-            socket.send(JSON.stringify({
-                type: 'finalizar_cruce',
-                auto_id: auto.id
-            }));
-            autosFinalizados.add(auto.id);
-        }
-        timeoutsFinalizar.delete(auto.id);
+    agregarLog(`🚗 ${auto.nombre} está cruzando el puente`, 'info');
+    // Actualizar visualmente el estado del puente a ocupado inmediatamente
+    const puenteStatus = document.getElementById('puenteStatus');
+    const puenteVisual = document.getElementById('puenteVisual');
+    const estadoPuente = document.getElementById('estadoPuente');
+    if (puenteStatus && puenteVisual && estadoPuente) {
+        puenteStatus.textContent = `Puente Ocupado por: ${auto.nombre}`;
+        puenteVisual.style.background = 'linear-gradient(90deg, #e74c3c 0%, #c0392b 50%, #e74c3c 100%)';
+        estadoPuente.textContent = `Ocupado por: ${auto.nombre}`;
+    }
+    actualizarEstadoPuente && actualizarEstadoPuente();
+    // Simular tiempo de cruce basado en velocidad y longitud real del puente
+    const longitudPuente = 0.5; // km (500 metros)
+    const tiempoCruce = (longitudPuente / auto.velocidad) * 3600 * 1000; // en ms
+    setTimeout(() => {
+        socket.send(JSON.stringify({
+            type: 'finalizar_cruce',
+            auto_id: auto.id
+        }));
     }, tiempoCruce);
-    
-    timeoutsFinalizar.set(auto.id, timeoutId);
 }
 
 // Auto salió del puente - CORREGIDO
@@ -301,7 +312,7 @@ function generarAutosAleatorios() {
             const autoData = {
                 nombre: `Auto_${Math.floor(Math.random() * 9000) + 1000}`,
                 velocidad: Math.random() * 50 + 30, // 30-80 km/h
-                tiempo_espera: Math.random() * 10 + 5, // 5-15 segundos
+                tiempo_espera: Math.random() * 2 + 1, // 1-3 segundos
                 direccion: Math.random() > 0.5 ? 'N' : 'S',
                 prioridad: prioridad
             };

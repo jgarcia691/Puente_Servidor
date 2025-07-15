@@ -80,12 +80,19 @@ class PuenteConsumer(AsyncWebsocketConsumer):
         
         PuenteConsumer.autos[auto_id] = auto
         heappush(PuenteConsumer.cola_espera, (prioridad, llegada, auto_id))
-        
         await self.channel_layer.group_send(
             "puente_grupo",
             {
                 "type": "auto_registrado",
                 "auto": auto
+            }
+        )
+        # Enviar estado actualizado a todos los clientes
+        await self.channel_layer.group_send(
+            "puente_grupo",
+            {
+                "type": "estado_actualizado",
+                "estado": self.get_estado_puente()
             }
         )
 
