@@ -1,0 +1,66 @@
+# Entorno virtual
+venv/
+.venv/  # Es común usar .venv también
+
+---
+
+# Archivos de Python compilados
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+---
+
+# Archivos de base de datos
+*.sqlite3
+*.db.sqlite3 # A veces se usa para Django
+
+---
+
+# Archivos de configuración locales
+.env
+*.env
+local_settings.py # Común en Django para configuraciones locales
+
+---
+
+# Archivos de logs
+*.log
+logs/ # Si tienes un directorio para logs
+
+---
+
+# Archivos de Django
+staticfiles/
+media/
+
+---
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+---
+
+# Archivos de configuración de IDE
+.vscode/
+.idea/
+
+---
+
+# Archivos de coverage y testing
+htmlcov/
+.coverage
+.tox/
+.pytest_cache/ # Directorio de caché de pytest
+*.xml           # Para resultados de tests como JUnit XML
+*.json          # Para resultados de tests o reportes de cobertura
+
+---
+
+# Archivos de paquetes y distribución
+*.egg-info/
+dist/
+build/
+.Python
+__pypackages__/ # Si usas PEP 582
