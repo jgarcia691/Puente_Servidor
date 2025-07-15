@@ -55,10 +55,11 @@ class PuenteConsumer(AsyncWebsocketConsumer):
                 "type": "auto_registrado",
                 "auto": {
                     "id": auto.id,
-                    "nombre": auto.nombre,
                     "direccion": auto.direccion,
-                    "velocidad": auto.velocidad,
-                    "tiempo_espera": auto.tiempo_espera
+                    "velocidad": round(auto.velocidad, 2),
+                    "turno": auto.turno,
+                    "tiempo_cruce": round(auto.tiempo_cruce, 2),
+                    "tiempo_espera": round(auto.tiempo_espera, 2)
                 }
             }
         )
@@ -102,68 +103,74 @@ class PuenteConsumer(AsyncWebsocketConsumer):
     # Métodos de base de datos
     @database_sync_to_async
     def get_estado_puente(self):
-        """Obtener estado actual del puente y serializar datetime a string"""
-        autos_en_puente = Auto.objects.filter(en_puente=True)
-        autos_esperando = Auto.objects.filter(en_puente=False)
-
+        """Obtener estado actual del puente y serializar los autos según la nueva lógica de turnos y colas"""
+        auto_norte = Auto.objects.filter(direccion='N').order_by('turno').first()
+        auto_sur = Auto.objects.filter(direccion='S').order_by('turno').first()
+        cola_norte = list(Auto.objects.filter(direccion='N', turno__gt=1).order_by('turno').values('id', 'turno', 'velocidad', 'tiempo_cruce', 'tiempo_espera'))
+        cola_sur = list(Auto.objects.filter(direccion='S', turno__gt=1).order_by('turno').values('id', 'turno', 'velocidad', 'tiempo_cruce', 'tiempo_espera'))
         def serializar_auto(auto):
             return {
                 'id': auto.id,
-                'nombre': auto.nombre,
-                'velocidad': auto.velocidad,
-                'tiempo_espera': auto.tiempo_espera,
+                'turno': auto.turno,
+                'velocidad': round(auto.velocidad, 2),
+                'tiempo_cruce': round(auto.tiempo_cruce, 2),
+                'tiempo_espera': round(auto.tiempo_espera, 2),
                 'direccion': auto.direccion,
-                'en_puente': auto.en_puente,
                 'timestamp': auto.timestamp.isoformat() if auto.timestamp else None
             }
-
         return {
-            'autos_en_puente': [serializar_auto(a) for a in autos_en_puente],
-            'autos_esperando': [serializar_auto(a) for a in autos_esperando],
-            'total_autos': Auto.objects.count()
+            'cruzando_norte': serializar_auto(auto_norte) if auto_norte else None,
+            'cruzando_sur': serializar_auto(auto_sur) if auto_sur else None,
+            'cola_norte': cola_norte,
+            'cola_sur': cola_sur
         }
 
     @database_sync_to_async
     def crear_auto(self, auto_data):
-        """Crear un nuevo auto en la base de datos"""
+        """Crear un nuevo auto en la base de datos con lógica de turnos y tiempos"""
         import random
+        LONGITUD_PUENTE = 500
+        direccion = random.choice(['N', 'S'])
+        velocidad = random.uniform(20, 60)
+        cola = Auto.objects.filter(direccion=direccion).order_by('turno')
+        turno = cola.count() + 1
+        velocidad_m_s = velocidad * 1000 / 3600
+        tiempo_cruce = LONGITUD_PUENTE / velocidad_m_s
+        tiempo_espera = sum([a.tiempo_cruce for a in cola])
         return Auto.objects.create(
-            nombre=auto_data.get('nombre', f'Auto_{random.randint(1000, 9999)}'),
-            velocidad=auto_data.get('velocidad', random.uniform(30, 80)),
-            tiempo_espera=auto_data.get('tiempo_espera', random.uniform(5, 15)),
-            direccion=auto_data.get('direccion', random.choice(['N', 'S']))
+            direccion=direccion,
+            velocidad=velocidad,
+            turno=turno,
+            tiempo_cruce=tiempo_cruce,
+            tiempo_espera=tiempo_espera
         )
 
     @database_sync_to_async
     def procesar_solicitud_cruce(self, auto_id):
-        """Procesar solicitud de cruce del puente"""
+        """Permitir el cruce solo al auto con turno 1 en su cola"""
         try:
             auto = Auto.objects.get(id=auto_id)
-            autos_en_puente = Auto.objects.filter(en_puente=True)
-            
-            if autos_en_puente.exists():
-                auto_en_puente = autos_en_puente.first()
-                if auto_en_puente.direccion != auto.direccion:
-                    return {
-                        'success': False,
-                        'permiso': False,
-                        'mensaje': f'Puente ocupado por auto en dirección {auto_en_puente.get_direccion_display()}'
+            primero = Auto.objects.filter(direccion=auto.direccion).order_by('turno').first()
+            if primero and primero.id == auto.id:
+                return {
+                    'success': True,
+                    'permiso': True,
+                    'mensaje': f'Auto {auto.id} puede cruzar el puente',
+                    'auto': {
+                        'id': auto.id,
+                        'direccion': auto.direccion,
+                        'velocidad': round(auto.velocidad, 2),
+                        'turno': auto.turno,
+                        'tiempo_cruce': round(auto.tiempo_cruce, 2),
+                        'tiempo_espera': round(auto.tiempo_espera, 2)
                     }
-            
-            # Dar permiso para cruzar
-            auto.en_puente = True
-            auto.save()
-            
-            return {
-                'success': True,
-                'permiso': True,
-                'mensaje': f'Auto {auto.nombre} puede cruzar el puente',
-                'auto': {
-                    'id': auto.id,
-                    'nombre': auto.nombre,
-                    'direccion': auto.direccion
                 }
-            }
+            else:
+                return {
+                    'success': False,
+                    'permiso': False,
+                    'mensaje': 'No es tu turno para cruzar el puente.'
+                }
         except Auto.DoesNotExist:
             return {
                 'success': False,
@@ -173,18 +180,30 @@ class PuenteConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def procesar_finalizar_cruce(self, auto_id):
-        """Procesar finalización de cruce y eliminar el auto"""
+        """Eliminar el auto que cruzó y actualizar turnos y tiempos de espera de la cola"""
         try:
             auto = Auto.objects.get(id=auto_id)
+            direccion = auto.direccion
             auto_data = {
                 'id': auto.id,
-                'nombre': auto.nombre,
                 'direccion': auto.direccion
             }
-            auto.delete()  # Eliminar el auto de la base de datos
+            auto.delete()
+            # Actualizar turnos y tiempos de espera de los autos restantes en la cola
+            LONGITUD_PUENTE = 500
+            cola = Auto.objects.filter(direccion=direccion).order_by('turno')
+            tiempo_acumulado = 0
+            for idx, a in enumerate(cola, start=1):
+                velocidad_m_s = a.velocidad * 1000 / 3600
+                tiempo_cruce = LONGITUD_PUENTE / velocidad_m_s
+                a.turno = idx
+                a.tiempo_espera = tiempo_acumulado
+                a.tiempo_cruce = tiempo_cruce
+                a.save()
+                tiempo_acumulado += tiempo_cruce
             return {
                 'success': True,
-                'mensaje': f'Auto {auto_data["nombre"]} ha salido del puente y fue eliminado',
+                'mensaje': f'Auto {auto_data["id"]} ha salido del puente y fue eliminado',
                 'auto': auto_data
             }
         except Auto.DoesNotExist:

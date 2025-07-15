@@ -9,6 +9,8 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .models import Auto
 
+LONGITUD_PUENTE = 500  # metros
+
 def index(request):
     """Vista principal del sistema del puente"""
     return render(request, 'index.html')
@@ -16,36 +18,37 @@ def index(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def registrar_auto(request):
-    """Registrar un nuevo auto en el sistema"""
+    """Registrar un nuevo auto en el sistema, asignando dirección, velocidad, turno y tiempos automáticamente"""
     try:
-        data = json.loads(request.body)
+        # Dirección aleatoria
+        direccion = random.choice(['N', 'S'])
+        # Velocidad aleatoria entre 20 y 60 km/h
+        velocidad = random.uniform(20, 60)
+        # Obtener la cola correspondiente
+        cola = Auto.objects.filter(direccion=direccion).order_by('turno')
+        turno = cola.count() + 1
+        # Calcular tiempo de cruce (en segundos)
+        velocidad_m_s = velocidad * 1000 / 3600  # convertir km/h a m/s
+        tiempo_cruce = LONGITUD_PUENTE / velocidad_m_s
+        # Calcular tiempo de espera: suma de los tiempos de cruce de los autos delante
+        tiempo_espera = sum([a.tiempo_cruce for a in cola])
+        # Crear el auto
         auto = Auto.objects.create(
-            nombre=data.get('nombre', f'Auto_{random.randint(1000, 9999)}'),
-            velocidad=data.get('velocidad', random.uniform(30, 80)),
-            tiempo_espera=data.get('tiempo_espera', random.uniform(5, 15)),
-            direccion=data.get('direccion', random.choice(['N', 'S']))
+            direccion=direccion,
+            velocidad=velocidad,
+            turno=turno,
+            tiempo_cruce=tiempo_cruce,
+            tiempo_espera=tiempo_espera
         )
-        
-        # Notificar a todos los clientes sobre el nuevo auto
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            "puente_grupo",
-            {
-                "type": "auto_registrado",
-                "auto": {
-                    "id": auto.id,
-                    "nombre": auto.nombre,
-                    "direccion": auto.direccion,
-                    "velocidad": auto.velocidad,
-                    "tiempo_espera": auto.tiempo_espera
-                }
-            }
-        )
-        
         return JsonResponse({
             'success': True,
             'auto_id': auto.id,
-            'message': f'Auto {auto.nombre} registrado exitosamente'
+            'direccion': auto.get_direccion_display(),
+            'velocidad': round(auto.velocidad, 2),
+            'turno': auto.turno,
+            'tiempo_cruce': round(auto.tiempo_cruce, 2),
+            'tiempo_espera': round(auto.tiempo_espera, 2),
+            'message': f'Auto registrado exitosamente en la cola {auto.get_direccion_display()}'
         })
     except Exception as e:
         return JsonResponse({
@@ -56,57 +59,26 @@ def registrar_auto(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def solicitar_cruce(request):
-    """Solicitar permiso para cruzar el puente"""
+    """Permitir el cruce solo al auto con turno 1 en su cola"""
     try:
         data = json.loads(request.body)
         auto_id = data.get('auto_id')
-        
-        try:
-            auto = Auto.objects.get(id=auto_id)
-        except Auto.DoesNotExist:
+        auto = Auto.objects.get(id=auto_id)
+        # Buscar el auto con turno 1 en la cola correspondiente
+        primero = Auto.objects.filter(direccion=auto.direccion).order_by('turno').first()
+        if primero and primero.id == auto.id:
+            return JsonResponse({
+                'success': True,
+                'permiso': True,
+                'mensaje': f'Auto {auto.id} puede cruzar el puente',
+                'tiempo_cruce': round(auto.tiempo_cruce, 2)
+            })
+        else:
             return JsonResponse({
                 'success': False,
-                'error': 'Auto no encontrado'
-            }, status=404)
-        
-        # Lógica de control del puente
-        autos_en_puente = Auto.objects.filter(en_puente=True)
-        
-        if autos_en_puente.exists():
-            # Si hay autos en el puente, verificar dirección
-            auto_en_puente = autos_en_puente.first()
-            if auto_en_puente.direccion != auto.direccion:
-                # Dirección diferente, debe esperar
-                return JsonResponse({
-                    'success': False,
-                    'permiso': False,
-                    'mensaje': f'Puente ocupado por auto en dirección {auto_en_puente.get_direccion_display()}'
-                })
-        
-        # Dar permiso para cruzar
-        auto.en_puente = True
-        auto.save()
-        
-        # Notificar a todos los clientes
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            "puente_grupo",
-            {
-                "type": "auto_cruzando",
-                "auto": {
-                    "id": auto.id,
-                    "nombre": auto.nombre,
-                    "direccion": auto.direccion
-                }
-            }
-        )
-        
-        return JsonResponse({
-            'success': True,
-            'permiso': True,
-            'mensaje': f'Auto {auto.nombre} puede cruzar el puente'
-        })
-        
+                'permiso': False,
+                'mensaje': 'No es tu turno para cruzar el puente.'
+            })
     except Exception as e:
         return JsonResponse({
             'success': False,
@@ -116,41 +88,29 @@ def solicitar_cruce(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def finalizar_cruce(request):
-    """Finalizar el cruce del puente"""
+    """Eliminar el auto que cruzó y actualizar turnos y tiempos de espera de la cola"""
     try:
         data = json.loads(request.body)
         auto_id = data.get('auto_id')
-        
-        try:
-            auto = Auto.objects.get(id=auto_id)
-        except Auto.DoesNotExist:
-            return JsonResponse({
-                'success': False,
-                'error': 'Auto no encontrado'
-            }, status=404)
-        
-        auto.en_puente = False
-        auto.save()
-        
-        # Notificar a todos los clientes
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            "puente_grupo",
-            {
-                "type": "auto_salio",
-                "auto": {
-                    "id": auto.id,
-                    "nombre": auto.nombre,
-                    "direccion": auto.direccion
-                }
-            }
-        )
-        
+        auto = Auto.objects.get(id=auto_id)
+        direccion = auto.direccion
+        # Eliminar el auto que cruzó
+        auto.delete()
+        # Actualizar turnos y tiempos de espera de los autos restantes en la cola
+        cola = Auto.objects.filter(direccion=direccion).order_by('turno')
+        tiempo_acumulado = 0
+        for idx, a in enumerate(cola, start=1):
+            velocidad_m_s = a.velocidad * 1000 / 3600
+            tiempo_cruce = LONGITUD_PUENTE / velocidad_m_s
+            a.turno = idx
+            a.tiempo_espera = tiempo_acumulado
+            a.tiempo_cruce = tiempo_cruce
+            a.save()
+            tiempo_acumulado += tiempo_cruce
         return JsonResponse({
             'success': True,
-            'mensaje': f'Auto {auto.nombre} ha salido del puente'
+            'mensaje': 'Cruce finalizado y cola actualizada.'
         })
-        
     except Exception as e:
         return JsonResponse({
             'success': False,
@@ -158,12 +118,51 @@ def finalizar_cruce(request):
         }, status=400)
 
 def estado_puente(request):
-    """Obtener el estado actual del puente"""
-    autos_en_puente = Auto.objects.filter(en_puente=True)
-    autos_esperando = Auto.objects.filter(en_puente=False)
-    
+    """Mostrar el auto que está cruzando (turno 1 de cada cola) y las colas restantes"""
+    auto_norte = Auto.objects.filter(direccion='N').order_by('turno').first()
+    auto_sur = Auto.objects.filter(direccion='S').order_by('turno').first()
+    cola_norte = list(Auto.objects.filter(direccion='N', turno__gt=1).order_by('turno').values('id', 'turno', 'velocidad', 'tiempo_cruce', 'tiempo_espera'))
+    cola_sur = list(Auto.objects.filter(direccion='S', turno__gt=1).order_by('turno').values('id', 'turno', 'velocidad', 'tiempo_cruce', 'tiempo_espera'))
     return JsonResponse({
-        'autos_en_puente': list(autos_en_puente.values()),
-        'autos_esperando': list(autos_esperando.values()),
-        'total_autos': Auto.objects.count()
+        'cruzando_norte': {
+            'id': auto_norte.id,
+            'turno': auto_norte.turno,
+            'velocidad': round(auto_norte.velocidad, 2),
+            'tiempo_cruce': round(auto_norte.tiempo_cruce, 2),
+            'tiempo_espera': round(auto_norte.tiempo_espera, 2)
+        } if auto_norte else None,
+        'cruzando_sur': {
+            'id': auto_sur.id,
+            'turno': auto_sur.turno,
+            'velocidad': round(auto_sur.velocidad, 2),
+            'tiempo_cruce': round(auto_sur.tiempo_cruce, 2),
+            'tiempo_espera': round(auto_sur.tiempo_espera, 2)
+        } if auto_sur else None,
+        'cola_norte': cola_norte,
+        'cola_sur': cola_sur
+    })
+
+def estado_colas(request):
+    """Obtener el estado actual de las colas Norte y Sur"""
+    cola_norte = Auto.objects.filter(direccion='N').order_by('turno')
+    cola_sur = Auto.objects.filter(direccion='S').order_by('turno')
+    return JsonResponse({
+        'cola_norte': [
+            {
+                'id': a.id,
+                'turno': a.turno,
+                'velocidad': round(a.velocidad, 2),
+                'tiempo_cruce': round(a.tiempo_cruce, 2),
+                'tiempo_espera': round(a.tiempo_espera, 2)
+            } for a in cola_norte
+        ],
+        'cola_sur': [
+            {
+                'id': a.id,
+                'turno': a.turno,
+                'velocidad': round(a.velocidad, 2),
+                'tiempo_cruce': round(a.tiempo_cruce, 2),
+                'tiempo_espera': round(a.tiempo_espera, 2)
+            } for a in cola_sur
+        ]
     })

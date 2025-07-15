@@ -1,5 +1,8 @@
 let socket;
 let autosRegistrados = new Map();
+let autosCruzando = new Set();
+let autosFinalizados = new Set();
+let timeoutsFinalizar = new Map();
 
 // Conectar WebSocket
 function conectarWebSocket() {
@@ -81,7 +84,7 @@ function registrarAuto() {
 // Auto registrado
 function autoRegistrado(auto) {
     autosRegistrados.set(auto.id, auto);
-    agregarLog(`Auto ${auto.nombre} registrado (${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'})`, 'info');
+    agregarLog(`Auto ${auto.id} registrado (${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'})`, 'info');
     actualizarEstadisticas();
     
     // Iniciar simulación del auto
@@ -112,7 +115,11 @@ function iniciarSimulacionAuto(auto) {
 // Manejar respuesta de cruce
 function manejarRespuestaCruce(respuesta) {
     if (respuesta.permiso) {
-        agregarLog(`✅ ${respuesta.mensaje}`, 'success');
+        // Si el auto ya está cruzando, no mostrar el mensaje de nuevo
+        if (!autosCruzando.has(respuesta.auto.id)) {
+            agregarLog(`✅ ${respuesta.mensaje}`, 'success');
+            autosCruzando.add(respuesta.auto.id);
+        }
     } else {
         agregarLog(`⏳ ${respuesta.mensaje}`, 'warning');
     }
@@ -120,22 +127,36 @@ function manejarRespuestaCruce(respuesta) {
 
 // Auto cruzando
 function autoCruzando(auto) {
-    agregarLog(`🚗 ${auto.nombre} está cruzando el puente`, 'info');
+    agregarLog(`🚗 Auto ${auto.id} está cruzando el puente`, 'info');
     actualizarEstadoPuente();
-    
-    // Simular tiempo de cruce basado en velocidad
-    const tiempoCruce = (1000 / auto.velocidad) * 1000; // 1km a la velocidad del auto
-    setTimeout(() => {
-        socket.send(JSON.stringify({
-            type: 'finalizar_cruce',
-            auto_id: auto.id
-        }));
+    // Si ya se finalizó el cruce para este auto, no volver a programar
+    if (autosFinalizados.has(auto.id)) return;
+    // Si ya hay un timeout programado para este auto, no hacer nada
+    if (timeoutsFinalizar.has(auto.id)) return;
+    const tiempoCruce = (1000 / auto.velocidad) * 1000;
+    const timeoutId = setTimeout(() => {
+        if (!autosFinalizados.has(auto.id)) {
+            socket.send(JSON.stringify({
+                type: 'finalizar_cruce',
+                auto_id: auto.id
+            }));
+            autosFinalizados.add(auto.id);
+        }
+        timeoutsFinalizar.delete(auto.id); // Limpiar el timeout al finalizar
     }, tiempoCruce);
+    timeoutsFinalizar.set(auto.id, timeoutId);
 }
 
 // Auto salió del puente
 function autoSalio(auto) {
-    agregarLog(`✅ ${auto.nombre} ha salido del puente`, 'success');
+    agregarLog(`✅ Auto ${auto.id} ha salido del puente`, 'success');
+    autosCruzando.delete(auto.id);
+    autosFinalizados.delete(auto.id);
+    // Limpiar timeout si existe
+    if (timeoutsFinalizar.has(auto.id)) {
+        clearTimeout(timeoutsFinalizar.get(auto.id));
+        timeoutsFinalizar.delete(auto.id);
+    }
     actualizarEstadoPuente();
 }
 
@@ -174,7 +195,7 @@ function actualizarEstadoPuente() {
             const puenteVisual = document.getElementById('puenteVisual');
             
             if (data.autos_en_puente.length > 0) {
-                puenteStatus.textContent = `Puente Ocupado - ${data.autos_en_puente[0].nombre}`;
+                puenteStatus.textContent = `Puente Ocupado - Auto ${data.autos_en_puente[0].id}`;
                 puenteVisual.style.background = 'linear-gradient(90deg, #e74c3c 0%, #c0392b 50%, #e74c3c 100%)';
                 document.getElementById('estadoPuente').textContent = 'Ocupado';
             } else {
@@ -195,7 +216,7 @@ function actualizarListaAutos(elementId, autos) {
     
     container.innerHTML = autos.map(auto => 
         `<div class="auto-item ${auto.en_puente ? 'en-puente' : ''}">
-            <strong>${auto.nombre}</strong><br>
+            <strong>Auto ${auto.id}</strong><br>
             ${auto.direccion === 'N' ? 'Norte a Sur' : 'Sur a Norte'} - ${auto.velocidad} km/h
         </div>`
     ).join('');
