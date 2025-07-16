@@ -166,3 +166,6 @@ def estado_colas(request):
             } for a in cola_sur
         ]
     })
+
+def dashboard(request):
+    return render(request, 'dashboard.html')

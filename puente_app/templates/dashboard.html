@@ -1,0 +1,56 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Simulación de Puente</title>
+    <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+</head>
+<body>
+    <div class="dashboard-container">
+        <h1>🌉 Dashboard de Simulación del Puente</h1>
+        <div style="text-align:center; margin-bottom: 18px;">
+            <button id="btnIniciarSimulacion" onclick="iniciarSimulacionDashboard()" style="padding: 10px 30px; font-size: 1.1em; background: #27ae60; color: #fff; border: none; border-radius: 7px; font-weight: bold; cursor: pointer;">Iniciar Simulación</button>
+        </div>
+        <div class="dashboard-main">
+            <div class="autos-cola autos-cola-norte">
+                <h3>Esperando Norte</h3>
+                <div id="colaNorte"></div>
+            </div>
+            <div class="puente-area">
+                <div class="puente-imagen">
+                    <div id="autosEnPuente"></div>
+                    <div class="puente-grafico">Puente</div>
+                </div>
+            </div>
+            <div class="autos-cola autos-cola-sur">
+                <h3>Esperando Sur</h3>
+                <div id="colaSur"></div>
+            </div>
+        </div>
+        <div class="dashboard-status">
+            <span id="dashboardEstado">Estado: Libre</span>
+            <span id="dashboardTotal">Total de Autos: 0</span>
+        </div>
+        <div class="dashboard-menu">
+            <h2>➕ Registrar Vehículo Manualmente</h2>
+            <form id="formVehiculo" onsubmit="registrarVehiculoDashboard(event)">
+                <label>Nombre: <input type="text" id="vehiculoNombre" placeholder="Auto_XYZ"></label>
+                <label>Velocidad (km/h): <input type="number" id="vehiculoVelocidad" min="30" max="120" value="60"></label>
+                <label>Tiempo de Espera (s): <input type="number" id="vehiculoEspera" min="1" max="30" value="5"></label>
+                <label>Prioridad: <input type="number" id="vehiculoPrioridad" min="1" max="10" value="5"></label>
+                <label>Dirección:
+                    <select id="vehiculoDireccion">
+                        <option value="N">Norte a Sur</option>
+                        <option value="S">Sur a Norte</option>
+                    </select>
+                </label>
+                <label>Repeticiones: <input type="number" id="vehiculoRepeticiones" min="1" max="10" value="1"></label>
+                <button type="submit">Registrar Vehículo</button>
+            </form>
+        </div>
+    </div>
+    <script src="{% static 'js/dashboard.js' %}"></script>
+</body>
+</html>

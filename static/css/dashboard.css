@@ -1,0 +1,185 @@
+.dashboard-container {
+    max-width: 1100px;
+    margin: 30px auto;
+    background: #fff;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    padding: 30px 40px;
+}
+.dashboard-main {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-top: 40px;
+}
+.autos-cola {
+    width: 180px;
+    min-height: 300px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    border: 2px solid #e9ecef;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.autos-cola h3 {
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    color: #2c3e50;
+}
+#colaNorte, #colaSur {
+    width: 100%;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.puente-area {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    min-height: 320px;
+}
+.puente-imagen {
+    position: relative;
+    width: 420px;
+    height: 120px;
+    background: linear-gradient(90deg, #8B4513 0%, #A0522D 50%, #8B4513 100%);
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.puente-grafico {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 1.5em;
+    font-weight: bold;
+    opacity: 0.7;
+    pointer-events: none;
+}
+#autosEnPuente {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 20px;
+    z-index: 2;
+}
+.auto-dashboard {
+    width: 150px;
+    min-height: 70px;
+    border-radius: 10px;
+    background: #3498db;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    grid-template-columns: 1fr 1fr;
+    font-weight: bold;
+    font-size: 0.95em;
+    box-shadow: 0 2px 8px rgba(44,62,80,0.12);
+    border: 2px solid #2980b9;
+    transition: transform 0.5s;
+    padding: 4px 2px;
+    margin: 0 auto 2px auto;
+    position: relative;
+    text-align: center;
+    word-break: break-word;
+}
+.auto-dashboard .auto-nombre {
+    font-size: 0.95em;
+    font-weight: bold;
+    margin-bottom: 2px;
+    line-height: 1.1;
+    white-space: normal;
+}
+.auto-dashboard .auto-datos {
+    font-size: 0.85em;
+    margin-bottom: 2px;
+    line-height: 1.1;
+}
+.auto-dashboard .auto-orden {
+    font-size: 0.8em;
+    color: #f1c40f;
+    font-weight: bold;
+    margin-top: 1px;
+    line-height: 1.1;
+}
+.auto-dashboard.sur {
+    background: #e67e22;
+    border-color: #d35400;
+}
+.auto-dashboard.norte {
+    background: #27ae60;
+    border-color: #229954;
+}
+.dashboard-status {
+    margin-top: 30px;
+    display: flex;
+    gap: 40px;
+    font-size: 1.1em;
+    color: #2c3e50;
+    justify-content: center;
+}
+.dashboard-menu {
+    margin-top: 40px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 25px 30px;
+    border: 2px solid #e9ecef;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.dashboard-menu h2 {
+    margin-bottom: 18px;
+    color: #2c3e50;
+    font-size: 1.2em;
+}
+.dashboard-menu form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px 30px;
+    align-items: center;
+    justify-content: center;
+}
+.dashboard-menu label {
+    display: flex;
+    flex-direction: column;
+    font-weight: 500;
+    color: #34495e;
+    font-size: 1em;
+    min-width: 140px;
+}
+.dashboard-menu input, .dashboard-menu select {
+    margin-top: 5px;
+    padding: 6px 10px;
+    border-radius: 5px;
+    border: 1px solid #b2bec3;
+    font-size: 1em;
+}
+.dashboard-menu button[type="submit"] {
+    background: #27ae60;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 22px;
+    font-size: 1em;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 18px;
+    transition: background 0.2s;
+}
+.dashboard-menu button[type="submit"]:hover {
+    background: #219150;
+} 

@@ -5,6 +5,7 @@ app_name = 'puente'
 
 urlpatterns = [
     path('', views.index, name='index'),
+    path('dashboard/', views.dashboard, name='dashboard'),
     path('api/registrar-auto/', views.registrar_auto, name='registrar_auto'),
     path('api/solicitar-cruce/', views.solicitar_cruce, name='solicitar_cruce'),
     path('api/finalizar-cruce/', views.finalizar_cruce, name='finalizar_cruce'),

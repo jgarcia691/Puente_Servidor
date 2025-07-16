@@ -36,6 +36,10 @@
                     <input type="number" id="tiempoEspera" min="5" max="30" value="10">
                 </div>
                 <div class="form-group">
+                    <label for="vueltasAuto">Vueltas:</label>
+                    <input type="number" id="vueltasAuto" min="1" max="10" value="1">
+                </div>
+                <div class="form-group">
                     <label for="direccionAuto">Dirección:</label>
                     <select id="direccionAuto">
                         <option value="N">Norte a Sur</option>
@@ -49,17 +53,24 @@
             <div class="status-section">
                 <h2>📊 Estado del Sistema</h2>
                 <div class="status-grid">
-                    <!-- <div class="status-card">
-                        <h3>🚗 Autos en el Puente</h3>
-                        <div class="auto-list" id="autosEnPuenteList">
-                            <p>Ningún auto en el puente</p>
-                        </div>
-                    </div> -->
                     <div class="status-card">
                         <h3>⏳ Autos Esperando</h3>
                         <div class="auto-list" id="autosEsperandoList">
-                            <p>Ningún auto esperando</p>
-                        </div>
+                            <table style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th>Auto</th>
+                                        <th>Prioridad</th>
+                                        <th>Dirección</th>
+                                        <th>Vueltas</th>
+                                        <th>Orden</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="autosEsperandoTablaBody">
+                                    <tr><td colspan="5">Ningún auto esperando</td></tr>
+                                </tbody>
+                            </table>
+                        </div>                        
                     </div>
                     <div class="status-card">
                         <h3>📈 Estadísticas</h3>
